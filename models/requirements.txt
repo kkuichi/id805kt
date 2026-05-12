@@ -1,0 +1,26 @@
+# Core dependencies
+python-dotenv>=1.0.0
+pandas>=2.0.0
+numpy>=1.24.0
+
+# Translation evaluation metrics
+sacrebleu>=2.3.1
+
+# Visualization
+matplotlib>=3.7.0
+
+# OpenAI API (for LLM methods)
+openai>=1.0.0
+
+# Hugging Face Transformers
+transformers>=4.35.0
+torch>=2.0.0
+sentencepiece>=0.1.99
+protobuf>=3.20.0
+
+# LoRA fine-tuning (optional - only if using method 6)
+peft>=0.7.0
+accelerate>=0.25.0
+
+# Additional utilities
+tqdm>=4.65.0
