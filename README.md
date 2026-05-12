@@ -1,435 +1,251 @@
-# Machine Translation EN ↔ SK — Bakalárska práca
+# Strojový preklad EN ↔ SK – evaluačný framework
 
-> Porovnanie 8 metód strojového prekladu medzi angličtinou a slovenčinou.
-> Vyhodnotenie pomocou BLEU, chrF a COMET metrík.
+Tento repozitár obsahuje zdrojový kód experimentálneho frameworku vytvoreného v rámci bakalárskej práce **„Strojový preklad pomocou veľkých jazykových modelov“**.
 
----
-
-## ⚡ Spustenie jedným príkazom
-
-```bash
-cd /Users/ilariondub/PycharmProjects/BP
-source .venv/bin/activate
-./run_pipeline.sh
-```
-
-Skript **sám zistí** čo už existuje a začne od správneho kroku.
+Projekt sa zameriava na porovnanie vybraných prístupov ku strojovému prekladu medzi angličtinou a slovenčinou. Hodnotenie je založené na metrikách **BLEU**, **chrF**, **COMET**, meraní rýchlosti inferencie vo forme **ms/token** a analýze stability výsledkov pomocou štandardnej odchýlky naprieč evaluačnými vzorkami.
 
 ---
 
-## Ako pipeline funguje
+## Charakteristika projektu
 
-```
-datasets/                     (surové korpusy)
-    │
-    ▼ create_datasets.py
-dataset_EN_SK.tsv             (100 000 párov EN→SK)
-dataset_SK_EN.tsv             (100 000 párov SK→EN)
-    │
-    ├──▶ stats_datasets100k.py     →  statistika_korpusu_100k.csv + grafy_100k/
-    │
-    ▼ build_balanced_corpus.py
-filtered_EN_SK.tsv            (vyfiltrovaný korpus)
-filtered_SK_EN.tsv
-    │
-    ▼ make_eval_samples.py
-eval_samples/                 (20 × 100-vetových vzoriek)
-    │
-    ├──▶ eval_samples_stats.py     →  štatistiky vzoriek
-    ├──▶ corpus_analysis.py        →  hĺbková analýza + grafy
-    │
-    ▼ models/run_all_evaluations.py
-models/results/               (výsledky všetkých 8 modelov + grafy)
+Cieľom projektu nie je vytvoriť nový prekladový model od začiatku, ale pripraviť jednotný experimentálny rámec na porovnanie viacerých dostupných prekladových konfigurácií. Framework umožňuje spracovať paralelný korpus, vytvoriť evaluačné vzorky, spustiť jednotlivé prekladové prístupy a následne vyhodnotiť ich kvalitu, rýchlosť a stabilitu.
+
+Experiment sa zameriava na dva smery prekladu:
+
+- **EN → SK** – preklad z angličtiny do slovenčiny,
+- **SK → EN** – preklad zo slovenčiny do angličtiny.
+
+Slovenčina je morfologicky bohatý jazyk, pri ktorom je potrebné sledovať nielen formálnu zhodu s referenčným prekladom, ale aj významovú primeranosť, stabilitu výstupov a praktickú použiteľnosť jednotlivých modelov.
+
+---
+
+## Porovnávané konfigurácie
+
+V rámci experimentu bolo porovnávaných osem prekladových konfigurácií:
+
+| # | Konfigurácia | Typ prístupu | Úloha v experimente |
+|---|---|---|---|
+| 1 | Zero-shot LLM | promptovaný veľký jazykový model | preklad bez ukážkových príkladov |
+| 2 | Few-shot LLM | promptovaný veľký jazykový model | preklad s príkladmi v prompte |
+| 3 | MarianMT | neurónový model strojového prekladu | rýchly baseline |
+| 4 | mT5 bez fine-tuningu | multilingválny text-to-text model | všeobecný baseline |
+| 5 | NLLB-200 | multilingválny model strojového prekladu | hlavný multilingválny model |
+| 6 | LoRA variant | adaptačný prístup | test efektívnej adaptácie |
+| 7 | NLLB + Backtranslation | pomocný prekladový variant | spätná kontrola výstupu |
+| 8 | NLLB + N-best Reranking | dekódovací/reranking variant | výber z viacerých kandidátnych prekladov |
+
+---
+
+## Použité dáta
+
+Experimentálny korpus bol vytvorený z piatich verejne dostupných paralelných zdrojov:
+
+- **Europarl**,
+- **CCMatrix**,
+- **OpenSubtitles**,
+- **ParaCrawl**,
+- **WikiMatrix**.
+
+Z každého zdroja bolo použitých 20 000 vetných párov, čím vznikol základný vyvážený dataset s rozsahom **100 000 paralelných vetných párov**.
+
+Pri spracovaní dát boli aplikované kroky čistenia a filtrovania, najmä:
+
+- odstránenie prázdnych alebo technicky poškodených riadkov,
+- odstránenie duplicít,
+- kontrola dĺžky segmentov,
+- kontrola pomeru dĺžok medzi jazykmi,
+- odstránenie URL, HTML značiek, e-mailových adries a nadmerného technického šumu,
+- kontrola potenciálne nekvalitných zarovnaní.
+
+Surové dáta a veľké výstupné súbory nie sú súčasťou repozitára z dôvodu veľkosti a licenčných obmedzení použitých korpusov.
+
+---
+
+## Metodológia
+
+Experimentálny postup pozostáva z nasledujúcich krokov:
+
+1. vytvorenie vyváženého paralelného korpusu,
+2. čistenie a filtrovanie dát,
+3. štatistická analýza korpusu,
+4. generovanie evaluačných vzoriek,
+5. spustenie prekladových konfigurácií,
+6. výpočet metrík BLEU, chrF a COMET,
+7. meranie rýchlosti inferencie v ms/token,
+8. výpočet priemerných hodnôt a štandardnej odchýlky,
+9. generovanie výstupných tabuliek a grafov.
+
+Pre rýchlejšie konfigurácie boli použité väčšie evaluačné vzorky. Výpočtovo náročnejšie konfigurácie boli hodnotené na menších vzorkách, čo predstavuje metodologický kompromis medzi rozsahom evaluácie a technickou realizovateľnosťou experimentu.
+
+---
+
+## Štruktúra repozitára
+
+```text
+.
+├── build_balanced_corpus.py        # zostavenie vyváženého korpusu
+├── corpus_analysis.py              # štatistická analýza korpusu
+├── create_datasets.py              # príprava datasetov
+├── eval_samples_stats.py           # štatistika evaluačných vzoriek
+├── make_eval_samples.py            # tvorba evaluačných vzoriek
+├── stats_datasets100k.py           # štatistiky 100k korpusu
+├── run_pipeline.sh                 # spustenie hlavnej pipeline
+├── README.md                       # dokumentácia projektu
+└── models/
+    ├── 01_zero_shot_llm.py         # zero-shot LLM konfigurácia
+    ├── 02_few_shot_llm.py          # few-shot LLM konfigurácia
+    ├── 03_marianmt.py              # MarianMT konfigurácia
+    ├── 04_t5_nmt.py                # mT5 konfigurácia
+    ├── 05_nllb_m2m100.py           # NLLB/M2M konfigurácie
+    ├── 06_fine_tuning_lora.py      # LoRA adaptácia
+    ├── 07_backtranslation.py       # backtranslation variant
+    ├── 08_nbest_reranking.py       # n-best reranking
+    ├── run_all_evaluations.py      # agregácia výsledkov
+    ├── utils.py                    # pomocné funkcie
+    └── requirements.txt            # závislosti projektu
 ```
 
 ---
 
-## Kroky pipelineu
+## Súbory nezahrnuté v repozitári
 
-### Krok 0 — Príprava prostredia (iba raz)
+Z repozitára sú zámerne vylúčené najmä:
 
-```bash
-# Vytvor virtuálne prostredie
-python3 -m venv .venv
-
-# Aktivuj ho
-source .venv/bin/activate
-
-# Nainštaluj závislosti
-pip install -r models/requirements.txt
-
-# Voliteľne: COMET metrika (~1.8 GB, stiahne sa automaticky pri prvom použití)
-pip install unbabel-comet
-
-# Voliteľne: LoRA fine-tuning (len pre metódu 6)
-pip install peft accelerate datasets
-
-# Nastav OpenAI API kľúč
-echo "OPENAI_API_KEY=sk-tvoj-kluc-sem" > models/.env
-```
-
----
-
-### Krok 1 — Kombinovanie korpusov → 100k párov
-
-**Skript:** `create_datasets.py`
-
-**Vstup:** `datasets/` so 5 paralelnými korpusmi:
-```
+```text
+.env
 datasets/
-├── CCMatrix/       CCMatrix.en-sk.en   CCMatrix.en-sk.sk   CCMatrix.en-sk.scores
-├── Europarl/       Europarl.en-sk.en   Europarl.en-sk.sk
-├── OpenSubtitles/  OpenSubtitles.en-sk.en   OpenSubtitles.en-sk.sk
-├── ParaCrawl/      ParaCrawl.en-sk.en   ParaCrawl.en-sk.sk
-└── WikiMatrix/     WikiMatrix.en-sk.en  WikiMatrix.en-sk.sk
+data/
+*.tsv
+models/results/
+models/lora_adapters/
+grafy_*/
+__pycache__/
+.idea/
+.DS_Store
 ```
 
-**Čo robí:**
-- Z každého korpusu náhodne vyberie 20 000 párov (seed=42)
-- Spája ich do jedného súboru → 5 × 20 000 = **100 000 párov**
-- Generuje verziu EN→SK aj SK→EN
-
-**Výstup:**
-- `dataset_EN_SK.tsv` — 100 000 riadkov, EN zdroj | SK cieľ
-- `dataset_SK_EN.tsv` — 100 000 riadkov, SK zdroj | EN cieľ
-
-```bash
-python create_datasets.py
-```
+Tieto súbory sú uvedené v `.gitignore`. Repozitár preto obsahuje hlavne zdrojový kód, dokumentáciu a konfiguračné súbory potrebné na reprodukciu experimentálneho postupu, nie veľké dátové alebo modelové artefakty.
 
 ---
 
-### Krok 2 — Štatistiky datasetu
+## Inštalácia
 
-**Skript:** `stats_datasets100k.py`
+Odporúčané prostredie:
 
-**Čo robí:**
-- Počíta dĺžky viet (počet slov, znakov) — min, max, priemer, medián
-- Analýza distribúcie dĺžok pre EN aj SK stranu
-- Pomer dĺžok zdrojových a cieľových viet
-- Porovnanie medzi korpusmi (CCMatrix vs Europarl vs ...)
-- Generuje vizualizácie
+- Python 3.10 alebo novší,
+- PyTorch,
+- Hugging Face Transformers,
+- sacreBLEU,
+- COMET,
+- pandas,
+- numpy,
+- matplotlib.
 
-**Výstup:**
-- `statistika_korpusu_100k.csv` — štatistiky v CSV
-- `grafy_100k/` — sada PNG grafov (histogramy, box ploty, scatter, CDF)
+Postup inštalácie:
 
 ```bash
-python stats_datasets100k.py
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r models/requirements.txt
 ```
+
+Pri použití LLM konfigurácií je potrebné lokálne nastaviť API kľúč v súbore `.env`:
+
+```bash
+OPENAI_API_KEY=your_api_key_here
+```
+
+Súbor `.env` nesmie byť súčasťou repozitára.
 
 ---
 
-### Krok 3 — Filtrovanie a čistenie dát
+## Spustenie
 
-**Skript:** `build_balanced_corpus.py`
+Celú pipeline možno spustiť pomocou shell skriptu:
 
-**Čo robí:**
-- Odstraňuje príliš krátke vety (< 3 slová)
-- Odstraňuje príliš dlhé vety (> 80 slov)
-- Filtruje páry s extrémnym pomerom dĺžok (> 3.0)
-- Voliteľne vyváži počet párov z každého korpusu
+```bash
+bash run_pipeline.sh
+```
 
-**Výstup:**
-- `filtered_EN_SK.tsv`
-- `filtered_SK_EN.tsv`
+Jednotlivé časti pipeline je možné spúšťať aj samostatne, napríklad:
 
 ```bash
 python build_balanced_corpus.py
-```
-
----
-
-### Krok 4 — Evaluačné vzorky
-
-**Skript:** `make_eval_samples.py`
-
-**Čo robí:**
-- Z 100k datasetu náhodne vyberá 10 vzoriek po 100 viet (seed=42)
-- Každá vzorka je iná (bez opakovania)
-- Generuje pre oba smery: EN→SK aj SK→EN
-
-**Výstup:** `eval_samples/` — 20 TSV súborov:
-```
-eval_samples/
-├── EN_SK_sample_01.tsv  …  EN_SK_sample_10.tsv   (100 párov každý)
-└── SK_EN_sample_01.tsv  …  SK_EN_sample_10.tsv   (100 párov každý)
-```
-
-```bash
-python make_eval_samples.py
-```
-
----
-
-### Krok 5 — Štatistiky eval vzoriek
-
-**Skript:** `eval_samples_stats.py`
-
-**Čo robí:** Overuje kvalitu a distribúciu eval vzoriek — dĺžky, zdroje, rôznorodosť.
-
-```bash
-python eval_samples_stats.py
-```
-
----
-
-### Krok 6 — Hĺbková analýza korpusu (voliteľné)
-
-**Skript:** `corpus_analysis.py`
-
-**Čo robí:**
-- TTR (Type-Token Ratio) — slovníková bohatosť
-- Pearson a Spearman korelácie dĺžok párov
-- Per-korpus breakdown (CCMatrix zvlášť, Europarl zvlášť, ...)
-- Percentily, top-10 tokenov, duplicity
-- 13+ grafov
-
-**Výstup:**
-- `corpus_analysis_report.txt`
-- `corpus_analysis_stats.csv` + `.xlsx`
-- `grafy_analyza/` — sada PNG grafov
-
-```bash
 python corpus_analysis.py
-```
-
----
-
-### Krok 7 — Evaluácia všetkých 8 modelov
-
-**Skript:** `models/run_all_evaluations.py`
-
-**Čo robí:**
-- Spustí všetkých 8 metód postupne
-- Každá metóda preloží 10 × 100 viet = 1 000 viet v oboch smeroch
-- Po skončení vygeneruje porovnávaciu správu a 3×3 graf
-
-```bash
-python models/run_all_evaluations.py
-```
-
-Alebo každú metódu zvlášť:
-
-```bash
-cd models
-python 01_zero_shot_llm.py
-python 02_few_shot_llm.py
-python 03_marianmt.py
-python 04_t5_nmt.py
-python 05_nllb_m2m100.py
-python 06_fine_tuning_lora.py
-python 07_backtranslation.py
-python 08_nbest_reranking.py
-cd ..
-```
-
----
-
-## 8 prekladových metód
-
-| # | Metóda | Model | Stiahnutie |
-|---|--------|-------|------------|
-| 1 | **Zero-shot LLM** | GPT-4o-mini | API (OpenAI kľúč) |
-| 2 | **Few-shot LLM** | GPT-4o-mini + príklady | API (OpenAI kľúč) |
-| 3 | **MarianMT** | Helsinki-NLP/opus-mt-en-sk | ~300 MB |
-| 4 | **T5 / mT5** | google/mt5-base | ~1.2 GB |
-| 5 | **NLLB-200** | facebook/nllb-200-distilled-600M | ~2.5 GB |
-| 6 | **LoRA Fine-tuning** | NLLB + vlastné adaptéry | ~2.5 GB + adaptéry |
-| 7 | **Backtranslation** | NLLB (spätný preklad) | ~2.5 GB |
-| 8 | **N-best Reranking** | NLLB (N-best + reranking) | ~2.5 GB |
-
----
-
-## Metriky hodnotenia
-
-| Metrika | Čo meria | Rozsah |
-|---------|----------|--------|
-| **BLEU** | Presnosť n-gramov oproti referenčnému prekladu | 0–100 ↑ |
-| **chrF** | Zhoda znakových n-gramov (robustnejšia voči morfológii) | 0–100 ↑ |
-| **COMET** | Neurálna metrika, citlivá na sémantiku a kontext | 0–100 ↑ |
-
-Evaluácia: **10 vzoriek × 100 viet = 1 000 viet** pre každý smer (EN→SK a SK→EN).
-
----
-
-## Výstupy
-
-### Po krokoch 1–6 (dáta a štatistiky)
-```
-statistika_korpusu_100k.csv    — štatistiky 100k datasetu
-grafy_100k/                    — grafy datasetu (histogramy, scatter, CDF...)
-filtered_EN_SK.tsv             — vyfiltrovaný korpus
-filtered_SK_EN.tsv
-eval_samples/                  — 20 TSV vzoriek pre evaluáciu
-corpus_analysis_report.txt     — hĺbková analýza
-grafy_analyza/                 — grafy analýzy (TTR, korelácie...)
-```
-
-### Po kroku 7 (modely)
-```
-models/results/
-├── 01_zero_shot_llm_DATUM.txt      — výsledky metódy 1
-├── 01_zero_shot_llm_DATUM.png      — graf metódy 1
-├── ...
-├── 08_nbest_reranking_DATUM.txt
-├── 08_nbest_reranking_DATUM.png
-├── comparison_report_DATUM.txt     — porovnávacia tabuľka všetkých metód
-├── comparison_report_DATUM.csv     — to isté v CSV
-└── comparison_plot_DATUM.png       — 3×3 porovnávací graf
-```
-
-### Popis 3×3 porovnávacieho grafu
-```
-┌──────────────────────┬──────────────────────┬──────────────────────┐
-│  EN→SK overlay       │  SK→EN overlay       │  Celkový rebríček    │
-│  BLEU+chrF+COMET     │  BLEU+chrF+COMET     │  (priemer metrík)    │
-├──────────────────────┼──────────────────────┼──────────────────────┤
-│  BLEU porovnanie     │  chrF porovnanie     │  COMET porovnanie    │
-│  (stĺpcový graf)     │  (stĺpcový graf)     │  (stĺpcový graf)     │
-├──────────────────────┼──────────────────────┼──────────────────────┤
-│  Čas spracovania     │  Kvalita vs Rýchlosť │  Heatmapa metrík     │
-│  (stĺpcový graf)     │  (scatter plot)      │  (normalizovaná)     │
-└──────────────────────┴──────────────────────┴──────────────────────┘
-```
-
----
-
-## Štruktúra projektu
-
-```
-BP/
-├── README.md                       ← tento súbor
-├── run_pipeline.sh                 ← spustí celý pipeline jedným príkazom
-├── .venv/                          ← Python virtuálne prostredie
-│
-├── datasets/                       ← surové korpusy (prázdne v repozitári)
-│   ├── CCMatrix/
-│   ├── Europarl/
-│   ├── OpenSubtitles/
-│   ├── ParaCrawl/
-│   └── WikiMatrix/
-│
-├── dataset_EN_SK.tsv               ← 100k párov (výstup kroku 1)
-├── dataset_SK_EN.tsv               ← 100k párov (výstup kroku 1)
-├── filtered_EN_SK.tsv              ← filtrovaný (výstup kroku 3)
-├── filtered_SK_EN.tsv              ← filtrovaný (výstup kroku 3)
-│
-├── eval_samples/                   ← 20 vzoriek × 100 viet (výstup kroku 4)
-│   ├── EN_SK_sample_01.tsv
-│   │   ...
-│   └── SK_EN_sample_10.tsv
-│
-├── grafy_100k/                     ← grafy štatistík datasetu
-├── grafy_analyza/                  ← grafy hĺbkovej analýzy
-├── statistika_korpusu_100k.csv
-├── corpus_analysis_report.txt
-├── corpus_analysis_stats.csv
-│
-├── create_datasets.py              ← Krok 1
-├── stats_datasets100k.py           ← Krok 2
-├── build_balanced_corpus.py        ← Krok 3
-├── make_eval_samples.py            ← Krok 4
-├── eval_samples_stats.py           ← Krok 5
-├── corpus_analysis.py              ← Krok 6
-│
-└── models/
-    ├── .env                        ← OPENAI_API_KEY=sk-...
-    ├── requirements.txt
-    ├── utils.py                    ← zdieľané utility (metriky, I/O, grafy)
-    │
-    ├── 01_zero_shot_llm.py
-    ├── 02_few_shot_llm.py
-    ├── 03_marianmt.py
-    ├── 04_t5_nmt.py
-    ├── 05_nllb_m2m100.py
-    ├── 06_fine_tuning_lora.py
-    ├── 07_backtranslation.py
-    ├── 08_nbest_reranking.py
-    ├── run_all_evaluations.py
-    │
-    ├── lora_adapters/
-    │   ├── en_sk/                  ← LoRA adaptér EN→SK
-    │   └── sk_en/                  ← LoRA adaptér SK→EN
-    │
-    └── results/                    ← výsledky evaluácií
-```
-
----
-
-## Spustenie pipelineu
-
-### Automatické (odporúčané)
-
-```bash
-./run_pipeline.sh
-```
-
-Skript sám zistí čo existuje a začne od správneho kroku:
-
-| Čo je na disku | Štart od |
-|---|---|
-| `datasets/` so súbormi `.en` / `.sk` | Krok 1 — plný pipeline |
-| `dataset_EN_SK.tsv` + `dataset_SK_EN.tsv` | Krok 2 — štatistiky → modely |
-| `filtered_EN_SK.tsv` + `filtered_SK_EN.tsv` | Krok 4 — eval vzorky → modely |
-| `eval_samples/` s TSV súbormi | Krok 7 — iba modely |
-
-### Manuálne od konkrétneho kroku
-
-```bash
-./run_pipeline.sh --from 1   # plný pipeline od začiatku
-./run_pipeline.sh --from 2   # začne od štatistík
-./run_pipeline.sh --from 4   # začne od eval vzoriek
-./run_pipeline.sh --from 7   # iba modely
-```
-
----
-
-## Časté problémy
-
-**`FileNotFoundError: dataset_SK_EN.tsv`**
-```bash
-# Buď spusti krok 1 (potrebuješ datasets/ s korpusmi):
-python create_datasets.py
-
-# Alebo skopíruj existujúce TSV súbory do projektu:
-cp ~/Documents/Claude/BP1/dataset_SK_EN.tsv .
-cp ~/Documents/Claude/BP1/dataset_EN_SK.tsv .
-```
-
-**`eval_samples/ neobsahuje žiadne TSV súbory`**
-```bash
 python make_eval_samples.py
-```
-
-**`OPENAI_API_KEY not found`**
-```bash
-echo "OPENAI_API_KEY=sk-tvoj-kluc" > models/.env
-```
-
-**`ModuleNotFoundError: No module named 'utils'`**
-```bash
-# Vždy spúšťaj z koreňa projektu (BP/), nie z models/
-cd /Users/ilariondub/PycharmProjects/BP
 python models/run_all_evaluations.py
 ```
 
-**COMET nie je dostupný (iba BLEU + chrF)**
-```bash
-pip install unbabel-comet
-# Model sa stiahne automaticky (~1.8 GB) pri prvom spustení
-```
+Niektoré skripty predpokladajú existenciu pripravených vstupných dát v očakávanej adresárovej štruktúre.
 
-**LoRA adaptéry nenájdené (metóda 06 padá)**
-```
-# Metóda 06 automaticky použije základný NLLB model bez adaptérov.
-# Pre vlastné adaptéry ich umiestni do:
-# models/lora_adapters/en_sk/
-# models/lora_adapters/sk_en/
-```
+---
 
-**`zsh: permission denied: ./run_pipeline.sh`**
-```bash
-chmod +x run_pipeline.sh
-./run_pipeline.sh
-```# id805kt
+## Výstupy projektu
+
+Projekt generuje najmä:
+
+- štatistické tabuľky korpusu,
+- evaluačné vzorky pre smery EN → SK a SK → EN,
+- preklady jednotlivých konfigurácií,
+- hodnoty metrík BLEU, chrF a COMET,
+- priemerný čas spracovania v ms/token,
+- štandardnú odchýlku výsledkov medzi vzorkami,
+- grafy závislosti dĺžky viet,
+- boxploty metrík,
+- grafy pomeru kvality a rýchlosti.
+
+Výsledné tabuľky a grafy boli použité pri spracovaní praktickej časti bakalárskej práce.
+
+---
+
+## Hlavné zistenia
+
+Experiment ukázal, že jednotlivé konfigurácie majú rozdielne silné a slabé stránky.
+
+- **MarianMT** sa ukázal ako rýchly a stabilný neurónový baseline.
+- **Zero-shot LLM** predstavuje dobrý praktický kompromis medzi sémantickou kvalitou, jednoduchosťou použitia a prijateľnou časovou náročnosťou.
+- **NLLB-200** je relevantný multilingválny model vhodný aj pre menej zastúpené jazyky.
+- **mT5 bez fine-tuningu** dosiahol slabšie výsledky, čo ukazuje, že všeobecný text-to-text model nemusí byť bez dodatočného prispôsobenia vhodný na priamy preklad.
+- **LoRA, Backtranslation a N-best Reranking** sú metodicky zaujímavé varianty, ich praktické použitie je však obmedzené vyššou časovou náročnosťou a variabilitou výsledkov.
+
+Z výsledkov vyplýva, že neexistuje jedna univerzálne najlepšia konfigurácia. Výber vhodného riešenia závisí od toho, či je prioritou kvalita, rýchlosť, stabilita alebo flexibilita použitia.
+
+---
+
+## Obmedzenia
+
+Pri interpretácii výsledkov je potrebné zohľadniť tieto obmedzenia:
+
+- rýchlejšie a výpočtovo náročnejšie konfigurácie boli hodnotené na evaluačných vzorkách rôznej veľkosti,
+- automatické metriky nenahrádzajú úplné ľudské hodnotenie,
+- výsledky závisia od kvality a domény použitých paralelných dát,
+- surové dáta a modelové artefakty nie sú súčasťou repozitára z dôvodu veľkosti a licenčných obmedzení.
+
+---
+
+## Súvis s bakalárskou prácou
+
+Repozitár je praktickou prílohou k bakalárskej práci:
+
+**Strojový preklad pomocou veľkých jazykových modelov**  
+Technická univerzita v Košiciach  
+Fakulta elektrotechniky a informatiky  
+Autor: **Ilarion Dub**  
+Rok: **2026**
+
+Repozitár slúži ako dokumentácia a zdrojový kód experimentálnej časti práce.
+
+---
+
+## Autor
+
+**Ilarion Dub**  
+Bakalárska práca, 2026  
+Technická univerzita v Košiciach  
+Fakulta elektrotechniky a informatiky
+
+---
+
+## Licencia a použitie
+
+Projekt bol vytvorený ako súčasť bakalárskej práce. Použitie, úprava alebo ďalšie šírenie projektu tretími stranami je možné len so súhlasom autora, pokiaľ nie je uvedené inak.
